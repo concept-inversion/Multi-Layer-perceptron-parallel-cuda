@@ -102,37 +102,66 @@ __syncthreads();
 }
 
 __global__ 
-void perceptron(float *train, float *test,float *d_w, float b)
+void perceptron(float *train, float *test,float *d_w, float b, float *d_updated)
 {
 	int dimension=61;
+	float __shared__ shared[64];
 	printf("start perceptrion\n");
 	// initiate weight and bias
 	int epoch=1;float predict=0;
-	b=0;
+	b=0;int i;
 	for(int i=threadIdx.x;i<61;i+=blockDim.x)
 	{
-	d_w[i]=0;
+	d_w[i]=1;
 	}
-	int row=blockDim.x;
-	int value=threadIdx.x;
-	int expected=0;
+	float expected=0;
 	// for each epoch
-	while (row<173)
+	int row=blockIdx.x;
+	while (row<2)
 	{
-	
+		printf("Row:%d\n",row);	
 		//predict the label of the output
-		for(i=threadIdx.x;i<61;i+=1)
+		int value=threadIdx.x;
+		while(value<(dimension-1))
 		{
-		predict = train[row*dimension+value]*d_w[value]+b;	
+			//printf("Train:%f,  Weight:%f,  bias:%f\n",train[row*dimension+value],d_w[value],b);
+			shared[value] = train[row*dimension+value]*d_w[value]+b;	
+			//printf("Sum:%f\n",shared[value]);
+			value+=blockDim.x;	
 		}
-	
-	if(predict<0)
-	{predict=-1;}
-	else predict=0;
-printf("Predict:\n");	
-	//	
+		// parallel reduce here; requires 
+		 __syncthreads();
+    		for (int req = blockDim.x/2; req > 0; req = req/2)
+    		{
+        		if(threadIdx.x < req)
+        			{
+            			int read = shared[threadIdx.x] + shared[threadIdx.x + req];
+            			shared[threadIdx.x] = read;
+        			}
+        		__syncthreads();
+
+    		}	
+		predict=shared[0];
+		printf("Total:%f\n",predict);	
+		if(predict<0)
+		{
+			predict=-1;
+		}
+		else predict=0;
+		printf("Predict:%f\n",predict);	
+		expected=train[row*dimension+60];
+		printf("Expected:%f\n",expected);
+		int i= threadIdx.x;
+		while(i<(dimension-1))
+		{
+			d_updated[row*dimension+i]=d_w[row*dimension+i] + expected*predict/173;
+			i+=blockDim.x; 	
+		}
+		updated_base+=base/173; 	
+		row+=gridDim.x;
+	}
+	// update the global weight
 }
-   
 void display(int *a,int len)
 {
     printf("\n");
@@ -157,16 +186,19 @@ int main(void)
     float *d_w;
     float *d_train;
     float *d_test;
+    float *d_error;
     cudaMalloc ((void **)&d_train,sizeof(float)*train_count);
     cudaMalloc ((void **)&d_test,sizeof(float)*test_count);
     cudaMalloc ((void **)&d_w,sizeof(int)*w_size);
-    //printf("\n malloc worked");
+    cudaMalloc ((void **)&d_error,sizeof(float)*train_count*w_size);
+
+	//printf("\n malloc worked");
    // double time_start=wtime(); 
     cudaMemcpy(d_train,train_data,sizeof(float)*train_count,cudaMemcpyHostToDevice);
     cudaMemcpy(d_test,test_data,sizeof(float)*test_count,cudaMemcpyHostToDevice);
-     //cudaMemcpy(d_w,W,sizeof(int)*w_size,cudaMemcpyHostToDevice);
+    //cudaMemcpy(d_w,W,sizeof(int)*w_size,cudaMemcpyHostToDevice);
     //start_time=0;
-    perceptron<<<1,1>>>(d_train,d_test,d_w,b);
+    perceptron<<<1,1>>>(d_train,d_test,d_w,b,d_error);
     //End_time=0;
     cudaDeviceSynchronize();
     //cudaMemcpy(W,d_w,sizeof(int)*len, cudaMemcpyDeviceToHost);
