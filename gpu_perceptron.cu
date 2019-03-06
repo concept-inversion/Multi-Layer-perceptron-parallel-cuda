@@ -160,8 +160,11 @@ void perceptron(float *train, float *test,float *d_w, float b, float *d_updated)
 		updated_base+=base/173; 	
 		row+=gridDim.x;
 	}
+	
 	// update the global weight
+	
 }
+
 void display(int *a,int len)
 {
     printf("\n");
